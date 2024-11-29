@@ -5,6 +5,7 @@ from django.urls import path, include
 # Define the API-related URL patterns
 api_urlpatterns = [
     path('auth/', include('authcore.urls')),  # Including authcore app URLs under 'api/auth/'
+    path('fintrack/', include('fintrack.urls')),  # Including fintrack app URLs under 'api/fintrack/'
 ]
 
 # Main URL configuration
