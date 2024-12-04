@@ -25,17 +25,14 @@ class Income(BaseModel):
 
 
 class Account(models.Model):
-    class AccountType(models.TextChoices):
-        POSTPAID = 'Postpaid', 'Postpaid'
-        PREPAID = 'Prepaid', 'Prepaid'
-    
     account_name = models.CharField(max_length=100)
+    limit = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     account_number = models.CharField(max_length=20, unique=True)
-    account_type = models.CharField(choices=AccountType.choices, max_length=50)
+    is_credit_card = models.BooleanField(default=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="accounts", on_delete=models.CASCADE)
 
     def __str__(self):
-        return f"{self.account_name} ({self.account_type})"
+        return f"{self.account_name}"
 
 
 # MonthlyBalance Model
@@ -52,7 +49,15 @@ class MonthlyBalance(BaseModel):
         ]
 
     def __str__(self):
-        return f"{self.account.account_name} - {self.month}/{self.year}: {self.balance}"
+        if self.account.is_credit_card:
+            # Ensure balance and limit are not None, default to 0 if they are
+            balance = self.balance if self.balance is not None else 0
+            limit = self.account.limit if self.account.limit is not None else 0
+            return f"{self.account.account_name} - {self.month}/{self.year}: {limit - balance}"
+        else:
+            # Just show balance if it's not a credit card
+            balance = self.balance if self.balance is not None else 0
+            return f"{self.account.account_name} - {self.month}/{self.year}: {balance}"
 
 
 
@@ -121,3 +126,17 @@ class Balance(models.Model):
 
     def __str__(self):
         return f"{self.user.username}'s balance in {self.group.name}: ${self.balance}"
+
+
+class Statement(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="statements")    
+    file = models.FileField(upload_to='statements/', null=True, blank=True)
+    start_date = models.DateField()  
+    end_date = models.DateField()    
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="statements")
+    description = models.TextField(blank=True, null=True)
+    def __str__(self):
+        return f"Statement from {self.start_date} to {self.end_date} for {self.user.username}"
+
+    class Meta:
+        ordering = ['-end_date']  
