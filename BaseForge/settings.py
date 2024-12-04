@@ -143,10 +143,12 @@ REST_FRAMEWORK = {
     ),
 }
 
+import os 
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=180),
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=100),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=50),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,

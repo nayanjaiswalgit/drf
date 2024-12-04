@@ -15,4 +15,11 @@ class CustomUser(AbstractUser):
         return self.username
     
 
-
+class GoogleCredentials(models.Model):
+    user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
+    access_token = models.TextField()
+    refresh_token = models.TextField()
+    token_uri = models.TextField()
+    client_id = models.TextField()
+    client_secret = models.TextField()
+    scopes = models.TextField()
