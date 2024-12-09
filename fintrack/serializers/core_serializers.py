@@ -1,5 +1,7 @@
 from rest_framework import serializers
 from ..models import Income, Account, MonthlyBalance, Group, GroupMembership, Transaction, Expense, Category, ExpenseSplit, Balance
+from authcore.models import CustomUser
+from datetime import datetime
 
 class IncomeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -10,7 +12,7 @@ class IncomeSerializer(serializers.ModelSerializer):
 class AccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = Account
-        fields = ['id', 'account_name', 'account_number', 'account_type']
+        fields = ['id', 'account_name', 'account_number',]
 
 
 class MonthlyBalanceSerializer(serializers.ModelSerializer):
@@ -33,27 +35,50 @@ class GroupMembershipSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = GroupMembership
-        fields = ['id', 'group', 'joined_at']
+        fields = ['id', 'joined_at']
 
 
 class TransactionSerializer(serializers.ModelSerializer):
-    group = GroupSerializer()
-    account = AccountSerializer()
+    account = serializers.PrimaryKeyRelatedField(queryset=Account.objects.all())
+    expenses = serializers.PrimaryKeyRelatedField(queryset=Expense.objects.all(), many=True, required=False)
 
     class Meta:
         model = Transaction
-        fields = ['id', 'group', 'account', 'amount', 'date', 'description', 'is_investment']
+        fields = ['id', 'user', 'account', 'amount', 'is_credit', 'date', 'description', 'expenses']
+        read_only_fields = ['user']  # User is automatically set
+
+    def create(self, validated_data):
+        # Get the user from the request context (automatically set)
+        user = self.context['request'].user
+        validated_data['user'] = user
+        
+        # Extract the date from the request data
+        date = self.context['request'].data.get('date', None)
+
+        
+        # If date is provided in the request, use it, otherwise, set the default date
+        if date:
+            validated_data['date'] = date
+        else:
+            # Raise error if date is not provided
+            raise serializers.ValidationError("Date is required.")
+
+
+        # Create and return the instance
+        return super().create(validated_data)
 
 
 class ExpenseSerializer(serializers.ModelSerializer):
-    transaction = TransactionSerializer()
-    category = serializers.StringRelatedField()  # Assuming you want to show category name
+    transactions = TransactionSerializer(many=True, required=False)
+    category = serializers.StringRelatedField()
 
     class Meta:
         model = Expense
-        fields = ['id', 'transaction', 'item_name', 'category', 'description', 'price']
-
-
+        fields = ['id', 'transactions', 'item_name', 'category', 'description', 'amount', 'date']
+        read_only_fields = ['user']  # Make sure user is read-only as it will be set in the viewset
+        
+        
+        
 class ExpenseSplitSerializer(serializers.ModelSerializer):
     expense = ExpenseSerializer()
     user = serializers.StringRelatedField()

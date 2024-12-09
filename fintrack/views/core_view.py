@@ -3,6 +3,7 @@ from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 from ..models import Income, Account, MonthlyBalance, Group, GroupMembership, Transaction, Expense, ExpenseSplit, Balance
 from ..serializers import IncomeSerializer, AccountSerializer, MonthlyBalanceSerializer, GroupSerializer, GroupMembershipSerializer, TransactionSerializer, ExpenseSerializer, ExpenseSplitSerializer, BalanceSerializer
+from django.shortcuts import get_object_or_404
 
 # Income API
 class IncomeViewSet(viewsets.ModelViewSet):
@@ -45,7 +46,39 @@ class ExpenseViewSet(viewsets.ModelViewSet):
     queryset = Expense.objects.all()
     serializer_class = ExpenseSerializer
     permission_classes = [IsAuthenticated]  # Only authenticated users can access this view
+    
+    def perform_create(self, serializer):
+        # Extract the user from the request object
+        user = self.request.user
+        
+        # First, create the Expense instance with the user context
+        expense = serializer.save(user=user)
 
+        # Check if an account is provided in the request data
+        account_id = self.request.data.get('account', None)
+        
+        
+        if account_id:
+            # If account_id is provided, fetch the corresponding Account object
+            account = get_object_or_404(Account, id=account_id)
+            
+            transaction_data = {
+                'account': account,
+                'amount': expense.amount,
+                'description': expense.description,
+                'date': expense.date,
+                'is_credit': False,  # Adjust this based on your logic
+                'user': user  # Set user from context
+            }
+
+            # Create the Transaction and associate it with the Expense
+            transaction = Transaction.objects.create(**transaction_data)
+            expense.transactions.add(transaction)  # Add the transaction to the expense
+
+        return expense
+    
+    
+    
 # Expense Split API
 class ExpenseSplitViewSet(viewsets.ModelViewSet):
     queryset = ExpenseSplit.objects.all()

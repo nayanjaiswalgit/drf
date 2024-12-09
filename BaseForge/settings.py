@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'authcore',
     'fintrack',
     'finassist',
+    'django_celery_results',
 ]
 
 MIDDLEWARE = [
@@ -143,6 +144,7 @@ REST_FRAMEWORK = {
     ),
 }
 
+
 import os 
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -178,3 +180,9 @@ SIMPLE_JWT = {
     'SLIDING_TOKEN_LIFETIME': timedelta(minutes=5),
     'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
 }
+
+CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Assuming Redis is being used as a message broker
+CELERY_RESULT_BACKEND = 'django-db'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'

@@ -1,8 +1,10 @@
+from typing import Iterable
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.conf import settings
 import  uuid
 from django.core.validators import MinValueValidator, MaxValueValidator
+from time import timezone
 
 month_validators = [MinValueValidator(1), MaxValueValidator(12)] 
 year_validators = [MinValueValidator(2020), MaxValueValidator(2050)]
@@ -14,6 +16,27 @@ class BaseModel(models.Model):
 
     class Meta:
         abstract = True
+
+
+
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
+from django.db import models
+
+class Counterparty(models.Model):
+    """Model to represent the counterparty, either a User or an external entity."""
+    name = models.CharField(max_length=255)
+    email = models.EmailField(blank=True, null=True)
+    external_id = models.CharField(max_length=255, blank=True, null=True)
+
+    # Generic foreign key to link to either a user or an external entity
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey('content_type', 'object_id')
+
+    def __str__(self):
+        return f"Counterparty: {self.name}"
+
 
 
 # Income Model
@@ -78,16 +101,6 @@ class GroupMembership(models.Model):
         return f"{self.user.username} in {self.group.name}"
 
 
-class Transaction(models.Model):
-    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="transactions")
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="transactions")
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
-    date = models.DateTimeField(auto_now_add=True)
-    description = models.TextField()
-    is_investment = models.BooleanField(default=False)
-
-    def __str__(self):
-        return f"{self.account.username} paid {self.amount} for {self.group.name} ({'Investment' if self.is_investment else 'Expense'})"
 
 
 class Category(models.Model):
@@ -99,15 +112,77 @@ class Category(models.Model):
         return self.name
 
 
-class Expense(models.Model):
-    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name="expenses")
-    item_name = models.CharField(max_length=255)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="expenses")
+from django.utils import timezone
+
+class Transaction(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="transactions")
+    group = models.ForeignKey('Group', on_delete=models.CASCADE, related_name="transactions", blank=True, null=True)
+    account = models.ForeignKey('Account', on_delete=models.CASCADE, related_name="transactions", blank=True, null=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    is_credit = models.BooleanField(default=False)
+    date = models.DateField()
     description = models.TextField()
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+
+    # Many-to-many relationship with Expense, change related_name to avoid conflict
+    expenses = models.ManyToManyField('Expense', related_name='transaction_expenses', blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'group', 'date']),
+            models.Index(fields=['date']),  # Adding an index on the date for faster querying.
+        ]
+        ordering = ['-date']  # Ensures that transactions are ordered by date in descending order by default.
 
     def __str__(self):
-        return f"{self.item_name} - ${self.price} ({self.category.name})"
+        return f"Transaction by {self.user} for {self.amount} on {self.date.strftime('%Y-%m-%d')}"
+
+    def clean(self):
+        """Ensure the amount is always positive"""
+        if self.amount <= 0:
+            raise ValidationError("Amount must be greater than zero.")
+
+    def save(self, *args, **kwargs):
+        self.clean()  # Validate the instance before saving
+        super().save(*args, **kwargs)
+
+    def add_expense(self, expense):
+        """Helper method to add an expense to the transaction and vice versa"""
+        self.expenses.add(expense)
+        expense.transactions.add(self)
+
+class Expense(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="expenses")
+    item_name = models.CharField(max_length=255)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    category = models.ForeignKey('Category', on_delete=models.CASCADE, related_name="expenses", blank=True, null=True)
+    description = models.TextField()
+    date = models.DateField(auto_now_add=True)  # Automatically sets the current date when a new record is created
+    
+
+    # Many-to-many relationship with Transaction, change related_name to avoid conflict
+    transactions = models.ManyToManyField('Transaction', related_name='expense_transactions', blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['user', 'category'])]
+
+    def __str__(self):
+        return f"Expense for '{self.item_name}' by {self.user}, Amount: {self.amount}"
+
+    def clean(self):
+        """Ensure the amount is always positive and paid status consistency"""
+        if self.amount <= 0:
+            raise ValidationError("Amount must be greater than zero.")
+            
+
+    def save(self, *args, **kwargs):
+        self.clean()  # Validate the instance before saving
+        super().save(*args, **kwargs)
+
+    def add_transaction(self, transaction):
+        """Helper method to add a transaction to the expense and vice versa"""
+        self.transactions.add(transaction)
+        transaction.expenses.add(self)
+
 
 
 class ExpenseSplit(models.Model):
@@ -140,3 +215,23 @@ class Statement(models.Model):
 
     class Meta:
         ordering = ['-end_date']  
+
+
+class MoneyTransaction(models.Model):
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name="money_transactions")
+    is_lend = models.BooleanField(default=False)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    counterparty = models.ForeignKey(Counterparty, on_delete=models.CASCADE, related_name="money_transactions")
+    date = models.DateField()
+    description = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        transaction_type = "Lent" if self.is_lend else "Borrowed"
+        return f"{transaction_type} {self.amount} to/from {self.counterparty.name} on {self.date}"
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['transaction', 'counterparty', 'date']),
+            models.Index(fields=['date']),
+        ]
+        ordering = ['-date']
