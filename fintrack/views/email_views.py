@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from authcore.models import GoogleCredentials
 import base64
 import logging
-from ..models.emails import Email
+from ..models.assist_model import Email
 from email.utils import parsedate_tz, mktime_tz
 from datetime import datetime
 import re

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from ..models import Income, Account, MonthlyBalance, Group, GroupMembership, Transaction, Expense, Category, ExpenseSplit, Balance
+from ..models.base_models import Income, Account, MonthlyBalance, Group, GroupMembership, Transaction, Expense, Category, ExpenseSplit, Balance
 from authcore.models import CustomUser
 from datetime import datetime
 

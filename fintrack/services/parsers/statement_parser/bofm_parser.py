@@ -1,33 +1,7 @@
 import pdfplumber
 import json
-
 import re
-from decimal import Decimal
-from datetime import datetime
-
-def format_key(key):
-    """Formats the key to follow Python variable naming conventions:
-    - Lowercase
-    - Replaces spaces with underscores
-    - Ensures the key doesn't start with a number
-    
-    Args:
-        key (str): The original key to format.
-        
-    Returns:
-        str: The formatted key.
-    """
-    # Replace spaces with underscores and convert to lowercase
-    formatted_key = key.strip().replace(" ", "_").lower()
-    
-    # Ensure the key doesn't start with a number (Python variables can't start with numbers)
-    if formatted_key and formatted_key[0].isdigit():
-        formatted_key = "_" + formatted_key
-    
-    return formatted_key
-
-
-
+from ..utils import format_key, array_to_dict
 def process_transactions(row_data):
     # Function to remove commas and convert to float
 
@@ -79,29 +53,16 @@ def process_transactions(row_data):
     is_credit = True if credit > 0 else False
 
     # Return the desired format
-    print({
+    return {
         "sr_no" : sr_no,
         "reference_number": reference_number,
         "amount": amount,
         "is_credit": is_credit,
         "date": date,
         "description": description
-    })
+    }
 
 
-def array_to_dict(arr):
-    """Converts an array to a dictionary by pairing elements (even index as keys, odd as values).
-    
-    Args:
-        arr (list): Input array to convert to dictionary.
-        
-    Returns:
-        dict or str: Dictionary if array length is even, error message  otherwise.
-    """
-    if len(arr) % 2 != 0:
-        return "Array length is not even"
-    
-    return dict(zip(arr[::2], arr[1::2]))
 
 
 def parse_bofm_statement(pdf_file_path):
@@ -113,7 +74,7 @@ def parse_bofm_statement(pdf_file_path):
     Returns:
         list: A list containing both 'transactions' and 'other_tables' as separate dictionaries.
     """
-    transactions_columns =['Date', 'SerNo.', 'Transaction Details', 'Reward\nPoints', 'Intl.#\namount', 'Amount (in`)']
+    transactions_columns = ['Sr No', 'Date', 'Particulars', 'Cheque/Reference\nNo', 'Debit', 'Credit', 'Balance', 'Channel']
     
     data = {}  # This will hold both transactions and other tables as separate entries
     
@@ -122,11 +83,11 @@ def parse_bofm_statement(pdf_file_path):
             for page in pdf.pages:
                 # Extract tables from the page
                 tables = page.extract_tables()
-              
-                for index, table in enumerate(tables):
+                
+                for table in tables:
                     if not table:
                         continue  # Skip empty tables
-                 
+                    
                     columns = table[0]  # First row as column headers
                     
                     # Check if the table corresponds to transactions
@@ -135,25 +96,48 @@ def parse_bofm_statement(pdf_file_path):
                         for row in table[1:]:
                             row_dict = dict(zip(columns, row))
                             row_dict = {format_key(key): value for key, value in row_dict.items() if key and value}
-                            # row_dict = process_transactions(row_dict)
+                            row_dict = process_transactions(row_dict)
                             transactions.append(row_dict)
                         
                         # Append transactions as a separate entry
                         if transactions:
                             data.update({'transactions': transactions})
-    
+                    else:
+                        # Handle other tables by creating a dictionary for each row
+                        other_table = {}
+                        for row in table[1:]:
+                            row_dict = array_to_dict(row)
+                            if isinstance(row_dict, dict) and row_dict:  # Avoid empty dictionaries
+                                # Sanitize the table key and add to the result
+                                table_key = format_key(columns[0]) if columns[0] else None
+                                if table_key:
+                                    other_table.update(row_dict)
+                        if other_table:  # Avoid appending empty tables
+                            data.update({table_key: other_table})
+            
     except FileNotFoundError:
         print(f"Error: The file '{pdf_file_path}' was not found.")
         return []
     except Exception as e:
         print(f"An error occurred: {e}")
         return []
+    
+    json_data = json.dumps(data, indent=4)
+    json_data = json.loads(json_string)
+    
+    formated_data = {}
 
-    return json.dumps(data, indent=4)
+    if "transactions" in json_data:
+        formated_data.update({"transactions": json_data["transactions"]})
+        
+    if "account_details" in json_data:
+        formated_data.update({"account_no": json_data["account_details"]["account_no"]})
+        
+    if "total_transaction_count" in json_data:
+        formated_data.update({"summary": json_data["total_transaction_count"]})
+
+
+    return formated_data
 
 
 
-# Example usage:
-json_data = parse_bofm_statement('test.pdf')
-
-print(json_data)

@@ -1,6 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from ..models import MonthlyBalance
+from ..models.base_models import MonthlyBalance
 from datetime import datetime
 from django.db.models import Sum, F
 from rest_framework.permissions import IsAuthenticated

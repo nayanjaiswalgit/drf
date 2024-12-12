@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from ..models import MonthlyBalance
+from ..models.base_models import MonthlyBalance
 
 class MonthlyBalanceSerializer(serializers.ModelSerializer):
     class Meta:

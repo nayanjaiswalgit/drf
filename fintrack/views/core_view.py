@@ -1,7 +1,7 @@
 
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
-from ..models import Income, Account, MonthlyBalance, Group, GroupMembership, Transaction, Expense, ExpenseSplit, Balance
+from ..models.base_models import Income, Account, MonthlyBalance, Group, GroupMembership, Transaction, Expense, ExpenseSplit, Balance
 from ..serializers import IncomeSerializer, AccountSerializer, MonthlyBalanceSerializer, GroupSerializer, GroupMembershipSerializer, TransactionSerializer, ExpenseSerializer, ExpenseSplitSerializer, BalanceSerializer
 from django.shortcuts import get_object_or_404
 

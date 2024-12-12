@@ -1,27 +1,16 @@
-from typing import Iterable
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.conf import settings
-import  uuid
 from django.core.validators import MinValueValidator, MaxValueValidator
-from time import timezone
-
+from fintrack.models import TaskStatus
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
+from authcore.models import BaseModel
 month_validators = [MinValueValidator(1), MaxValueValidator(12)] 
 year_validators = [MinValueValidator(2020), MaxValueValidator(2050)]
 # Base model with common validation
-class BaseModel(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True , editable=False)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        abstract = True
 
 
-
-from django.contrib.contenttypes.fields import GenericForeignKey
-from django.contrib.contenttypes.models import ContentType
-from django.db import models
 
 class Counterparty(models.Model):
     """Model to represent the counterparty, either a User or an external entity."""
@@ -46,6 +35,11 @@ class Income(BaseModel):
     date_received = models.DateField()
     user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="incomes", on_delete=models.CASCADE)
 
+class BankName(models.Model):
+    name = models.CharField(max_length=100)
+    parser_name = models.CharField(max_length=100, unique=True)
+    def __str__(self):
+        return self.name
 
 class Account(models.Model):
     account_name = models.CharField(max_length=100)
@@ -115,6 +109,7 @@ class Category(models.Model):
 from django.utils import timezone
 
 class Transaction(models.Model):
+    reference_number = models.CharField( unique=True ,max_length=100, blank=True, null=True)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="transactions")
     group = models.ForeignKey('Group', on_delete=models.CASCADE, related_name="transactions", blank=True, null=True)
     account = models.ForeignKey('Account', on_delete=models.CASCADE, related_name="transactions", blank=True, null=True)
@@ -144,7 +139,8 @@ class Transaction(models.Model):
     def save(self, *args, **kwargs):
         self.clean()  # Validate the instance before saving
         super().save(*args, **kwargs)
-
+        
+        
     def add_expense(self, expense):
         """Helper method to add an expense to the transaction and vice versa"""
         self.expenses.add(expense)
@@ -203,19 +199,48 @@ class Balance(models.Model):
         return f"{self.user.username}'s balance in {self.group.name}: ${self.balance}"
 
 
-class Statement(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="statements")    
-    file = models.FileField(upload_to='statements/', null=True, blank=True)
-    start_date = models.DateField()  
-    end_date = models.DateField()    
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="statements")
-    description = models.TextField(blank=True, null=True)
+ 
+from django.contrib.contenttypes.fields import GenericRelation
+
+class Statement(BaseModel):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="statements"
+    )
+    file = models.FileField(upload_to='statements/')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    account = models.ForeignKey(
+        Account, on_delete=models.CASCADE, related_name="statements", null=True, blank=True
+    )
+    task_statuses  = GenericRelation(TaskStatus)  # Link to task statuses
+    bank_name = models.ForeignKey(BankName, on_delete=models.CASCADE, null=True, blank=True)
+    is_archived = models.BooleanField(default=False)
+
     def __str__(self):
         return f"Statement from {self.start_date} to {self.end_date} for {self.user.username}"
+    
+    def start_parsing(self):
+        # Create initial task for parser
+        TaskStatus.objects.create(
+            task_type='STATEMENT_PARSING',
+            task_stage='PARSER',
+            associated_object_id=self.id,
+            associated_object_type=self.__class__.__name__,
+            status='PENDING'
+        )
+
+    def fallback_to_ai(self):
+        # Create AI task if the parser fails
+        TaskStatus.objects.create(
+            task_type='STATEMENT_PARSING',
+            task_stage='AI',
+            associated_object_id=self.id,
+            associated_object_type=self.__class__.__name__,
+            status='PENDING'
+        )
 
     class Meta:
-        ordering = ['-end_date']  
-
+        ordering = ['-end_date']
 
 class MoneyTransaction(models.Model):
     transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name="money_transactions")
@@ -224,7 +249,6 @@ class MoneyTransaction(models.Model):
     counterparty = models.ForeignKey(Counterparty, on_delete=models.CASCADE, related_name="money_transactions")
     date = models.DateField()
     description = models.TextField(blank=True, null=True)
-
     def __str__(self):
         transaction_type = "Lent" if self.is_lend else "Borrowed"
         return f"{transaction_type} {self.amount} to/from {self.counterparty.name} on {self.date}"

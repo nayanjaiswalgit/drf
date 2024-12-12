@@ -44,7 +44,6 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'authcore',
     'fintrack',
-    'finassist',
     'django_celery_results',
 ]
 
